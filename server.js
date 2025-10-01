@@ -2,14 +2,20 @@
 import express from "express";
 import fetch from "node-fetch";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(cors());
+app.use(express.static(path.join(__dirname, "public"))); // serve frontend
 
-// 🔹 Search route
-app.get("/search", async (req, res) => {
+// 🔹 Search endpoint
+app.get("/api/search", async (req, res) => {
   const { query } = req.query;
   if (!query) return res.status(400).json({ error: "Query required" });
 
@@ -25,8 +31,8 @@ app.get("/search", async (req, res) => {
   }
 });
 
-// 🔹 Download route
-app.get("/download", async (req, res) => {
+// 🔹 Download endpoint
+app.get("/api/download", async (req, res) => {
   const { url, type } = req.query;
   if (!url || !type) return res.status(400).json({ error: "URL and type required" });
 
@@ -46,5 +52,5 @@ app.get("/download", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`✅ Server running on http://localhost:${PORT}`);
 });
