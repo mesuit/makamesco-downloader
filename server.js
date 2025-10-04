@@ -1,4 +1,3 @@
-// server.js
 import express from "express";
 import fetch from "node-fetch";
 import cors from "cors";
@@ -14,7 +13,7 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.static(path.join(__dirname, "public"))); // serve frontend
 
-// 🔹 Search endpoint
+// 🔹 Search endpoint (YouTube search)
 app.get("/api/search", async (req, res) => {
   const { query } = req.query;
   if (!query) return res.status(400).json({ error: "Query required" });
@@ -31,22 +30,49 @@ app.get("/api/search", async (req, res) => {
   }
 });
 
-// 🔹 Download endpoint
+// 🔹 MP3/Audio download endpoint supporting multiple Keith endpoints
 app.get("/api/download", async (req, res) => {
-  const { url, type } = req.query;
-  if (!url || !type) return res.status(400).json({ error: "URL and type required" });
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ error: "URL required" });
 
-  const endpoint =
-    type === "audio"
-      ? `https://apis.davidcyriltech.my.id/download/ytmp3?url=${encodeURIComponent(url)}`
-      : `https://apis.davidcyriltech.my.id/download/ytmp4?url=${encodeURIComponent(url)}`;
+  const endpoints = [
+    "audio",
+    "ytmp3",
+    "dlmp3",
+    "yta",
+    "ytv",
+    "ytv2"
+  ];
 
   try {
-    const apiRes = await fetch(endpoint);
-    const data = await apiRes.json();
-    res.json(data);
+    // Fetch all endpoints in parallel
+    const results = await Promise.all(
+      endpoints.map(async (type) => {
+        const apiRes = await fetch(`https://apis-keith.vercel.app/download/${type}?url=${encodeURIComponent(url)}`);
+        const data = await apiRes.json();
+        if (!data?.result?.url) return null;
+        return {
+          type,
+          title: data.result.title || "audio",
+          url: data.result.url
+        };
+      })
+    );
+
+    // Filter out failed results
+    const validResults = results.filter(r => r !== null);
+
+    if (!validResults.length) {
+      return res.status(500).json({ error: "No downloadable links found" });
+    }
+
+    // Return all available links
+    res.json({
+      success: true,
+      downloads: validResults
+    });
   } catch (err) {
-    console.error("Download error:", err);
+    console.error("MP3 download error:", err);
     res.status(500).json({ error: "Download failed" });
   }
 });
@@ -54,3 +80,4 @@ app.get("/api/download", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
