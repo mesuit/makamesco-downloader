@@ -19,7 +19,6 @@ async function searchVideo() {
       throw new Error("No results found.");
     }
 
-    // Show the first result
     const video = searchJson.results[0];
     const videoUrl = video.url;
 
@@ -28,46 +27,60 @@ async function searchVideo() {
         <img class="thumbnail" src="${video.thumbnail}" alt="Thumbnail"/>
         <div class="info">
           <h2>${video.title}</h2>
-          <div class="download-buttons">
-            <button onclick="downloadMedia('${videoUrl}', 'audio')">⬇ Download MP3</button>
-            <button onclick="downloadMedia('${videoUrl}', 'video')">⬇ Download MP4</button>
-          </div>
+          <div class="download-buttons" id="downloadButtons"></div>
+          <div class="audio-player" id="audioPlayer" style="margin-top:10px;"></div>
         </div>
       </div>
     `;
+
+    // Fetch available download options from backend
+    await fetchDownloads(videoUrl);
   } catch (err) {
     console.error(err);
     errorMsg.textContent = "❌ " + err.message;
   }
 }
 
-async function downloadMedia(videoUrl, type) {
-  const resultContainer = document.getElementById("resultContainer");
+async function fetchDownloads(videoUrl) {
+  const downloadButtonsDiv = document.getElementById("downloadButtons");
+  const audioPlayerDiv = document.getElementById("audioPlayer");
   const errorMsg = document.getElementById("errorMsg");
 
+  downloadButtonsDiv.innerHTML = "";
+  audioPlayerDiv.innerHTML = "";
+
   try {
-    const downloadRes = await fetch(`/api/download?url=${encodeURIComponent(videoUrl)}&type=${type}`);
+    const downloadRes = await fetch(`/api/download?url=${encodeURIComponent(videoUrl)}`);
     const downloadJson = await downloadRes.json();
 
-    if (!downloadJson.success || !downloadJson.result?.download_url) {
-      throw new Error("Download not available.");
+    if (!downloadJson.success || !downloadJson.downloads?.length) {
+      throw new Error("No downloadable links found.");
     }
 
-    const d = downloadJson.result;
+    downloadJson.downloads.forEach(d => {
+      // Download button
+      const downloadBtn = document.createElement("button");
+      downloadBtn.textContent = `⬇ ${d.type.toUpperCase()}`;
+      downloadBtn.onclick = () => {
+        window.open(d.url, "_blank");
+      };
 
-    resultContainer.innerHTML = `
-      <div class="result">
-        <img class="thumbnail" src="${d.thumbnail}" alt="Thumbnail"/>
-        <div class="info">
-          <h2>${d.title}</h2>
-          <p><strong>Type:</strong> ${d.type}</p>
-          <p><strong>Quality:</strong> ${d.quality}</p>
-          <a class="download-link" href="${d.download_url}" target="_blank" download>
-            ⬇ Download ${type === "audio" ? "MP3" : "MP4"}
-          </a>
-        </div>
-      </div>
-    `;
+      // Play button (only for audio)
+      const playBtn = document.createElement("button");
+      playBtn.textContent = "▶ Play";
+      playBtn.onclick = () => {
+        audioPlayerDiv.innerHTML = `
+          <audio controls autoplay>
+            <source src="${d.url}" type="audio/mp3">
+            Your browser does not support the audio element.
+          </audio>
+        `;
+      };
+
+      downloadButtonsDiv.appendChild(downloadBtn);
+      downloadButtonsDiv.appendChild(playBtn);
+    });
+
   } catch (err) {
     console.error(err);
     errorMsg.textContent = "❌ " + err.message;
