@@ -1,7 +1,9 @@
-async function searchVideo() {
-  const query = document.getElementById("ytQuery").value.trim();
+async function searchVideo(queryParam) {
+  const queryInput = document.getElementById("ytQuery");
+  const query = queryParam || queryInput.value.trim();
   const resultContainer = document.getElementById("resultContainer");
   const errorMsg = document.getElementById("errorMsg");
+  const searchBtn = document.getElementById("searchBtn");
 
   resultContainer.innerHTML = "";
   errorMsg.textContent = "";
@@ -10,6 +12,9 @@ async function searchVideo() {
     errorMsg.textContent = "❌ Please enter a search term.";
     return;
   }
+
+  searchBtn.disabled = true;
+  searchBtn.textContent = "⏳ Searching...";
 
   try {
     const searchRes = await fetch(`/api/search?query=${encodeURIComponent(query)}`);
@@ -25,22 +30,27 @@ async function searchVideo() {
     resultContainer.innerHTML = `
       <div class="result">
         <img class="thumbnail" src="${video.thumbnail}" alt="Thumbnail"/>
-        <div class="info">
-          <h2>${video.title}</h2>
-          <div class="download-buttons" id="downloadButtons"></div>
-          <div class="audio-player" id="audioPlayer" style="margin-top:10px;"></div>
-        </div>
+        <h2>${video.title}</h2>
+        <div class="download-buttons" id="downloadButtons"></div>
+        <div class="audio-player" id="audioPlayer" style="margin-top:10px;"></div>
       </div>
     `;
 
-    // Fetch available download options from backend
+    // Fetch download links
     await fetchDownloads(videoUrl);
+
+    // Add Share Option
+    addShareOption(video.title, videoUrl);
   } catch (err) {
     console.error(err);
     errorMsg.textContent = "❌ " + err.message;
+  } finally {
+    searchBtn.disabled = false;
+    searchBtn.textContent = "🔍 Search";
   }
 }
 
+// 🔹 Fetch Downloads (same logic)
 async function fetchDownloads(videoUrl) {
   const downloadButtonsDiv = document.getElementById("downloadButtons");
   const audioPlayerDiv = document.getElementById("audioPlayer");
@@ -58,23 +68,17 @@ async function fetchDownloads(videoUrl) {
     }
 
     downloadJson.downloads.forEach(d => {
-      // Download button
       const downloadBtn = document.createElement("button");
       downloadBtn.textContent = `⬇ ${d.type.toUpperCase()}`;
-      downloadBtn.onclick = () => {
-        window.open(d.url, "_blank");
-      };
+      downloadBtn.onclick = () => window.open(d.url, "_blank");
 
-      // Play button (only for audio)
       const playBtn = document.createElement("button");
       playBtn.textContent = "▶ Play";
       playBtn.onclick = () => {
         audioPlayerDiv.innerHTML = `
           <audio controls autoplay>
             <source src="${d.url}" type="audio/mp3">
-            Your browser does not support the audio element.
-          </audio>
-        `;
+          </audio>`;
       };
 
       downloadButtonsDiv.appendChild(downloadBtn);
@@ -85,4 +89,51 @@ async function fetchDownloads(videoUrl) {
     console.error(err);
     errorMsg.textContent = "❌ " + err.message;
   }
+}
+
+// 🎁 Trending Suggestions
+const trendingSongs = [
+  "Not Like Us - Kendrick Lamar",
+  "Water - Tyla",
+  "Calm Down - Rema",
+  "Flowers - Miley Cyrus",
+  "Perfect - Ed Sheeran",
+  "Husn - Anuv Jain",
+  "Unavailable - Davido",
+  "People - Libianca",
+  "Rush - Ayra Starr"
+];
+
+window.onload = () => {
+  const year = new Date().getFullYear();
+  document.getElementById("year").textContent = year;
+
+  const trendingContainer = document.getElementById("trendingContainer");
+  trendingSongs.forEach(song => {
+    const div = document.createElement("div");
+    div.textContent = song;
+    div.className = "trending-item";
+    div.onclick = () => searchVideo(song);
+    trendingContainer.appendChild(div);
+  });
+};
+
+// 📤 Share Option
+function addShareOption(title, url) {
+  const resultContainer = document.getElementById("resultContainer");
+  const shareBtn = document.createElement("button");
+  shareBtn.textContent = "🔗 Share";
+  shareBtn.onclick = async () => {
+    if (navigator.share) {
+      await navigator.share({
+        title: title,
+        text: `Listen to ${title}`,
+        url: url
+      });
+    } else {
+      navigator.clipboard.writeText(url);
+      alert("🔗 Link copied to clipboard!");
+    }
+  };
+  resultContainer.appendChild(shareBtn);
 }
