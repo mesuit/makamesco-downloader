@@ -11,9 +11,9 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(cors());
-app.use(express.static(path.join(__dirname, "public"))); // serve frontend
+app.use(express.static(path.join(__dirname, "public"))); // Serve frontend files
 
-// 🔹 Search endpoint (YouTube search)
+// ✅ SEARCH ENDPOINT (uses your working search API)
 app.get("/api/search", async (req, res) => {
   const { query } = req.query;
   if (!query) return res.status(400).json({ error: "Query required" });
@@ -30,54 +30,62 @@ app.get("/api/search", async (req, res) => {
   }
 });
 
-// 🔹 MP3/Audio download endpoint supporting multiple Keith endpoints
+// 🎵 DOWNLOAD ENDPOINT (uses GoodnessTech + Noobs APIs)
 app.get("/api/download", async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: "URL required" });
 
   const endpoints = [
-    "audio",
-    "ytmp3",
-    "dlmp3",
-    "yta",
-    "ytv",
-    "ytv2"
+    `https://api.goodnesstechhost.xyz/download/youtube/audio?url=${encodeURIComponent(url)}`,
+    `https://noobs-api.top/dipto/ytDl3?link=${encodeURIComponent(url)}&format=mp3`
   ];
 
   try {
-    // Fetch all endpoints in parallel
     const results = await Promise.all(
-      endpoints.map(async (type) => {
-        const apiRes = await fetch(`https://apis-keith.vercel.app/download/${type}?url=${encodeURIComponent(url)}`);
-        const data = await apiRes.json();
-        if (!data?.result?.url) return null;
-        return {
-          type,
-          title: data.result.title || "audio",
-          url: data.result.url
-        };
+      endpoints.map(async (api) => {
+        try {
+          const resp = await fetch(api, { timeout: 25000 });
+          const data = await resp.json();
+
+          // ✅ GoodnessTech API structure
+          if (data?.result?.url) {
+            return {
+              type: "mp3",
+              title: data.result.title || "Audio Track",
+              url: data.result.url
+            };
+          }
+
+          // ✅ Noobs API structure
+          if (data?.downloadUrl || data?.downloadLink || data?.url) {
+            return {
+              type: "mp3",
+              title: data.title || "Audio Track",
+              url: data.downloadUrl || data.downloadLink || data.url
+            };
+          }
+
+          return null;
+        } catch (error) {
+          console.error(`Error from ${api}:`, error.message);
+          return null;
+        }
       })
     );
 
-    // Filter out failed results
-    const validResults = results.filter(r => r !== null);
+    const valid = results.filter(Boolean);
 
-    if (!validResults.length) {
-      return res.status(500).json({ error: "No downloadable links found" });
+    if (!valid.length) {
+      return res.status(404).json({ error: "No downloadable links found" });
     }
 
-    // Return all available links
-    res.json({
-      success: true,
-      downloads: validResults
-    });
+    res.json({ success: true, downloads: valid });
   } catch (err) {
-    console.error("MP3 download error:", err);
+    console.error("Download error:", err);
     res.status(500).json({ error: "Download failed" });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}`);
+  console.log(`✅ Makamesco Downloader running at http://localhost:${PORT}`);
 });
-
