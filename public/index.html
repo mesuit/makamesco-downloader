@@ -2,25 +2,34 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Makamesco  Downloader</title>
-  <link rel="stylesheet" href="style.css"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Makamesco Downloader 🎵</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="container">
-    <h1>🎵 makamesco any music Downloader 🎥</h1>
+    <h1>🎧 Makamesco Music & Video Downloader</h1>
+    <p class="subtitle">Download your favorite tracks in seconds!</p>
 
-    <input type="text" id="ytQuery" placeholder="Enter YouTube video name..."/>
-    <button onclick="searchVideo()">🔍 Search</button>
+    <div class="search-bar">
+      <input type="text" id="ytQuery" placeholder="Search any song or artist..." />
+      <button onclick="searchVideo()" id="searchBtn">🔍 Search</button>
+    </div>
 
     <p id="errorMsg" class="error"></p>
-    <div id="resultContainer"></div>
+
+    <section id="suggestions">
+      <h2>🔥 Trending Now</h2>
+      <div id="trendingContainer" class="trending-list"></div>
+    </section>
+
+    <div id="resultContainer" class="results"></div>
   </div>
 
-  <script src="script.js"></script>
   <footer>
-  <p>Coded with <span class="heart">❤️</span> by Meshack Matheka</p>
-</footer>
+    <p>Coded with ❤️ by <b>Meshack Matheka</b> | <span id="year"></span></p>
+  </footer>
 
+  <script src="script.js"></script>
 </body>
 </html>
