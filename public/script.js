@@ -17,30 +17,27 @@ async function searchVideo(queryParam) {
   searchBtn.textContent = "⏳ Searching...";
 
   try {
-    const searchRes = await fetch(`/api/search?query=${encodeURIComponent(query)}`);
-    const searchJson = await searchRes.json();
+    const res = await fetch(`/api/search?query=${encodeURIComponent(query)}`);
+    const data = await res.json();
 
-    if (!searchJson.results || searchJson.results.length === 0) {
+    if (!data.results || data.results.length === 0)
       throw new Error("No results found.");
-    }
 
-    const video = searchJson.results[0];
+    const video = data.results[0];
     const videoUrl = video.url;
 
     resultContainer.innerHTML = `
       <div class="result">
         <img class="thumbnail" src="${video.thumbnail}" alt="Thumbnail"/>
         <h2>${video.title}</h2>
-        <div class="download-buttons" id="downloadButtons"></div>
-        <div class="audio-player" id="audioPlayer" style="margin-top:10px;"></div>
+        <div id="downloadButtons"></div>
+        <div id="audioPlayer" style="margin-top:10px;"></div>
       </div>
     `;
 
-    // Fetch download links
     await fetchDownloads(videoUrl);
-
-    // Add Share Option
     addShareOption(video.title, videoUrl);
+
   } catch (err) {
     console.error(err);
     errorMsg.textContent = "❌ " + err.message;
@@ -50,39 +47,47 @@ async function searchVideo(queryParam) {
   }
 }
 
-// 🔹 Fetch Downloads (same logic)
+// ✅ Fetch Download Links
 async function fetchDownloads(videoUrl) {
-  const downloadButtonsDiv = document.getElementById("downloadButtons");
-  const audioPlayerDiv = document.getElementById("audioPlayer");
+  const buttons = document.getElementById("downloadButtons");
+  const player = document.getElementById("audioPlayer");
   const errorMsg = document.getElementById("errorMsg");
 
-  downloadButtonsDiv.innerHTML = "";
-  audioPlayerDiv.innerHTML = "";
+  buttons.innerHTML = "";
+  player.innerHTML = "";
 
   try {
-    const downloadRes = await fetch(`/api/download?url=${encodeURIComponent(videoUrl)}`);
-    const downloadJson = await downloadRes.json();
+    const res = await fetch(`/api/download?url=${encodeURIComponent(videoUrl)}`);
+    const data = await res.json();
 
-    if (!downloadJson.success || !downloadJson.downloads?.length) {
-      throw new Error("No downloadable links found.");
-    }
+    if (!data.success) throw new Error("No download links found.");
 
-    downloadJson.downloads.forEach(d => {
-      const downloadBtn = document.createElement("button");
-      downloadBtn.textContent = `⬇ ${d.type.toUpperCase()}`;
-      downloadBtn.onclick = () => window.open(d.url, "_blank");
+    const downloads = data.downloads || [data]; // support single / many
+
+    downloads.forEach(d => {
+      const link = d.url;
+      if (!link) return;
+
+      // 🔥 Guess file type
+      let label = "Download";
+      if (link.includes(".mp3") || link.includes("audio")) label = "MP3";
+      if (link.includes(".mp4") || link.includes("video")) label = "MP4";
+
+      const dlBtn = document.createElement("button");
+      dlBtn.textContent = `⬇ ${label}`;
+      dlBtn.onclick = () => window.open(link, "_blank");
 
       const playBtn = document.createElement("button");
       playBtn.textContent = "▶ Play";
       playBtn.onclick = () => {
-        audioPlayerDiv.innerHTML = `
+        player.innerHTML = `
           <audio controls autoplay>
-            <source src="${d.url}" type="audio/mp3">
+            <source src="${link}" type="audio/mp3">
           </audio>`;
       };
 
-      downloadButtonsDiv.appendChild(downloadBtn);
-      downloadButtonsDiv.appendChild(playBtn);
+      buttons.appendChild(dlBtn);
+      buttons.appendChild(playBtn);
     });
 
   } catch (err) {
@@ -91,49 +96,36 @@ async function fetchDownloads(videoUrl) {
   }
 }
 
-// 🎁 Trending Suggestions
+// 🔥 Trending Suggestions
 const trendingSongs = [
-  "Not Like Us - Kendrick Lamar",
-  "Water - Tyla",
-  "Calm Down - Rema",
-  "Flowers - Miley Cyrus",
-  "Perfect - Ed Sheeran",
-  "Husn - Anuv Jain",
-  "Unavailable - Davido",
-  "People - Libianca",
-  "Rush - Ayra Starr"
+  "Not Like Us - Kendrick Lamar","Water - Tyla","Calm Down - Rema",
+  "Flowers - Miley Cyrus","Perfect - Ed Sheeran","Husn - Anuv Jain",
+  "Unavailable - Davido","People - Libianca","Rush - Ayra Starr"
 ];
 
 window.onload = () => {
-  const year = new Date().getFullYear();
-  document.getElementById("year").textContent = year;
-
-  const trendingContainer = document.getElementById("trendingContainer");
+  document.getElementById("year").textContent = new Date().getFullYear();
+  const t = document.getElementById("trendingContainer");
   trendingSongs.forEach(song => {
-    const div = document.createElement("div");
+    let div = document.createElement("div");
     div.textContent = song;
     div.className = "trending-item";
     div.onclick = () => searchVideo(song);
-    trendingContainer.appendChild(div);
+    t.appendChild(div);
   });
 };
 
-// 📤 Share Option
+// 📤 Share
 function addShareOption(title, url) {
-  const resultContainer = document.getElementById("resultContainer");
-  const shareBtn = document.createElement("button");
-  shareBtn.textContent = "🔗 Share";
-  shareBtn.onclick = async () => {
+  const box = document.getElementById("resultContainer");
+  const btn = document.createElement("button");
+  btn.textContent = "🔗 Share";
+  btn.onclick = async () => {
     if (navigator.share) {
-      await navigator.share({
-        title: title,
-        text: `Listen to ${title}`,
-        url: url
-      });
-    } else {
-      navigator.clipboard.writeText(url);
-      alert("🔗 Link copied to clipboard!");
+      return navigator.share({ title, text: `Listen to ${title}`, url });
     }
+    navigator.clipboard.writeText(url);
+    alert("🔗 Link copied!");
   };
-  resultContainer.appendChild(shareBtn);
+  box.appendChild(btn);
 }
