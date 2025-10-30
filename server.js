@@ -1,4 +1,3 @@
-// server.js - defensive version to prevent `toUpperCase` on undefined
 import express from "express";
 import fetch from "node-fetch";
 import cors from "cors";
@@ -10,239 +9,97 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const SEARCH_HOST = "https://my-rest-apis-six.vercel.app";
-
-// --- Basic middleware
-app.use((req, res, next) => {
-  // Defensive: ensure method/header strings exist to avoid .toUpperCase errors
-  try {
-    req.method = (typeof req.method === "string") ? req.method : String(req.method || "");
-    // Normalize header keys to strings (but keep original headers)
-    const rawHeaders = req.headers || {};
-    Object.keys(rawHeaders).forEach(k => {
-      if (typeof k !== "string") {
-        // ensure keys are string (shouldn't be needed typically)
-        rawHeaders[String(k)] = rawHeaders[k];
-        delete rawHeaders[k];
-      }
-    });
-    req.headers = rawHeaders;
-  } catch (e) {
-    // continue anyway
-    console.error("Middleware normalization error:", e && e.stack ? e.stack : e);
-  }
-  next();
-});
 
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
-// --- Global error handlers (prevent crashing, log stack)
-process.on("uncaughtException", (err) => {
-  console.error("UNCAUGHT EXCEPTION:", err && err.stack ? err.stack : err);
-});
-process.on("unhandledRejection", (reason, p) => {
-  console.error("UNHANDLED REJECTION at Promise:", p, "reason:", reason && reason.stack ? reason.stack : reason);
-});
+const SEARCH_API_1 = "https://my-rest-apis-six.vercel.app/yts";
+const SEARCH_API_2 = "https://piped.video/api/v1/search"; // ✅ new clean backup search
 
-// --- Helper: safe JSON parser for fetch responses
-async function safeJson(resp) {
-  if (!resp) return null;
+// Safe responder
+async function safeFetchJson(url) {
   try {
-    return await resp.json();
-  } catch (e) {
-    try {
-      const txt = await resp.text();
-      return { raw: txt };
-    } catch {
-      return null;
-    }
-  }
+    const res = await fetch(url);
+    try { return await res.json(); }
+    catch { return { raw: await res.text() }; }
+  } catch { return null; }
 }
 
-// --- Validate an endpoint URL string before fetching
-function isValidHttpUrl(u) {
-  if (!u || typeof u !== "string") return false;
-  try {
-    const parsed = new URL(u);
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-// --- SEARCH (unchanged behavior but defensive)
+// ✅ SEARCH (NEW FALLBACK LOGIC)
 app.get("/api/search", async (req, res) => {
-  try {
-    const { query } = req.query;
-    if (!query) return res.status(400).json({ error: "Query required" });
+  const q = (req.query?.query || "").trim();
+  if (!q) return res.status(400).json({ error: "Query required" });
 
-    const target = `${SEARCH_HOST}/yts?query=${encodeURIComponent(query)}`;
-    if (!isValidHttpUrl(target)) {
-      return res.status(500).json({ error: "Search host invalid" });
-    }
+  const qEncoded = encodeURIComponent(q);
 
-    const resp = await Promise.race([
-      fetch(target),
-      new Promise(resolve => setTimeout(() => resolve(null), 10000))
-    ]);
-
-    if (!resp) return res.status(504).json({ error: "Search timeout" });
-
-    const data = await safeJson(resp);
-    return res.json(data);
-  } catch (err) {
-    console.error("Search endpoint error:", err && err.stack ? err.stack : err);
-    return res.status(500).json({ error: "Search failed", detail: String(err) });
-  }
-});
-
-// --- Helper to extract download link safely
-function getDownload(data) {
-  if (!data || typeof data !== "object") return null;
-
-  // collect candidate fields that may contain a URL or URL-like response
-  const candidates = [
-    data.url,
-    data.download,
-    data.downloadUrl,
-    data?.result?.download_url,
-    data?.result?.downloadUrl,
-    data?.result?.url,
-    data?.raw
+  // Clean API calls
+  const tries = [
+    `${SEARCH_API_1}?query=${qEncoded}`,
+    `${SEARCH_API_2}?q=${qEncoded}` // ✅ piped search fallback
   ];
 
-  for (const c of candidates) {
-    if (!c) continue;
-    if (typeof c === "string" && (c.startsWith("http://") || c.startsWith("https://"))) {
-      return { title: data?.result?.title || data?.title || "Media", url: c };
-    }
-    // if c is an object with url or link property
-    if (typeof c === "object") {
-      const u = c.url || c.link || c.href;
-      if (typeof u === "string" && (u.startsWith("http://") || u.startsWith("https://"))) {
-        return { title: data?.result?.title || data?.title || "Media", url: u };
-      }
+  for (const url of tries) {
+    const data = await safeFetchJson(url);
+    if (data && Object.keys(data).length) {
+      return res.json(data);
     }
   }
 
-  return null;
+  return res.status(500).json({ error: "Search failed — try another query" });
+});
+
+// ✅ PARSE LINKS SAFELY
+function extractUrl(obj) {
+  if (!obj) return null;
+  return [
+    obj.url, obj.download, obj.downloadUrl,
+    obj?.result?.url, obj?.result?.download,
+    obj.raw
+  ].find(v => typeof v === "string" && v.startsWith("http"));
 }
 
-// --- DOWNLOAD (defensive)
+// ✅ DOWNLOAD
 app.get("/api/download", async (req, res) => {
-  try {
-    const rawUrl = req.query?.url;
-    if (!rawUrl) return res.status(400).json({ error: "URL required" });
+  const rawUrl = (req.query?.url || "").trim();
+  if (!rawUrl) return res.status(400).json({ error: "URL required" });
 
-    // build youtube url if only id provided
-    const yt = (typeof rawUrl === "string" && (rawUrl.includes("youtube") || rawUrl.includes("youtu.be")))
-      ? rawUrl
-      : `https://www.youtube.com/watch?v=${rawUrl}`;
+  const yt = rawUrl.includes("youtube")
+    ? rawUrl
+    : `https://www.youtube.com/watch?v=${rawUrl}`;
 
-    // endpoints you specified (encoded)
-    const enc = encodeURIComponent(yt);
-    const apiskeith = [
-      `https://apiskeith.vercel.app/download/audio?url=${enc}`,
-      `https://apiskeith.vercel.app/download/ytmp3?url=${enc}`,
-      `https://apiskeith.vercel.app/download/mp3?url=${enc}`,
-      `https://apiskeith.vercel.app/download/ytv?url=${enc}`,
-      `https://apiskeith.vercel.app/download/ytv?url=${enc}`
-    ];
+  const enc = encodeURIComponent(yt);
 
-    const backup = [
-      `${SEARCH_HOST}/download?url=${enc}`,
-      `${SEARCH_HOST}/ytmp3?url=${enc}`
-    ];
+  const engines = [
+    `https://apiskeith.vercel.app/download/ytmp3?url=${enc}`,
+    `https://apiskeith.vercel.app/download/audio?url=${enc}`,
+    `https://apiskeith.vercel.app/download/ytv?url=${enc}`,
+    `https://my-rest-apis-six.vercel.app/download?url=${enc}`,
+    `https://my-rest-apis-six.vercel.app/ytmp3?url=${enc}`
+  ];
 
-    // filter only valid URLs (defensive)
-    const endpoints = [...apiskeith, ...backup].filter(isValidHttpUrl);
+  for (const ep of engines) {
+    const data = await safeFetchJson(ep);
 
-    if (!endpoints.length) return res.status(500).json({ error: "No valid endpoints configured" });
-
-    // fetch with timeout and defensive checks
-    const fetchWithTimeout = async (endpoint, timeoutMs = 12_000) => {
-      if (!isValidHttpUrl(endpoint)) return { ok: false, endpoint, reason: "invalid-url" };
-      try {
-        const resp = await Promise.race([
-          fetch(endpoint),
-          new Promise(resolve => setTimeout(() => resolve(null), timeoutMs))
-        ]);
-        if (!resp) return { ok: false, endpoint, reason: "timeout" };
-
-        const data = await safeJson(resp);
-        return { ok: true, endpoint, status: resp.status, data };
-      } catch (err) {
-        return { ok: false, endpoint, reason: "fetch-error", error: String(err) };
-      }
-    };
-
-    // run all probes in parallel but safely
-    const fetchPromises = endpoints.map(ep => fetchWithTimeout(ep));
-    const probeResults = await Promise.all(fetchPromises);
-
-    // parse results defensively
-    const found = [];
-    for (const r of probeResults) {
-      try {
-        if (!r || !r.ok || !r.data) continue;
-        const media = getDownload(r.data);
-        if (!media) continue;
-        // ensure url is string
-        if (typeof media.url !== "string") continue;
-        found.push({ title: media.title, url: media.url, source: r.endpoint });
-      } catch (e) {
-        // ignore this endpoint but log for debug
-        console.warn("Parsing probe result failed for", r?.endpoint, "err:", e && e.stack ? e.stack : e);
-      }
+    const url = extractUrl(data);
+    if (url) {
+      return res.json({
+        success: true,
+        title: data?.title || data?.result?.title || "Video",
+        url,
+        source: ep
+      });
     }
-
-    // dedupe by url
-    const unique = [];
-    const seen = new Set();
-    for (const f of found) {
-      if (!f || !f.url) continue;
-      if (seen.has(f.url)) continue;
-      seen.add(f.url);
-      unique.push(f);
-    }
-
-    if (unique.length) return res.json({ success: true, downloads: unique });
-
-    // no usable links: return probe debug (trimmed)
-    const debug = probeResults.map(p => {
-      return {
-        endpoint: p?.endpoint || null,
-        ok: !!p?.ok,
-        reason: p?.reason || null,
-        status: p?.status || null,
-        short: p?.data ? (typeof p.data === "string" ? p.data.slice(0,200) : JSON.stringify(p.data).slice(0,200)) : null
-      };
-    });
-
-    return res.status(404).json({ error: "No downloadable links found", probes: debug });
-
-  } catch (err) {
-    console.error("Download route error:", err && err.stack ? err.stack : err);
-    return res.status(500).json({ error: "Download failed", detail: String(err) });
   }
+
+  return res.status(404).json({ error: "No download link found" });
 });
 
-// serve UI fallback
-app.get("/", (req, res) => {
-  try {
-    return res.sendFile(path.join(__dirname, "public", "index.html"));
-  } catch (e) {
-    return res.status(500).send("UI not available");
-  }
-});
+// ✅ Serve UI
+app.get("/", (req, res) =>
+  res.sendFile(path.join(__dirname, "public", "index.html"))
+);
 
-// final express error handler (last resort)
-app.use((err, req, res, next) => {
-  console.error("EXPRESS ERROR HANDLER:", err && err.stack ? err.stack : err);
-  res.status(500).json({ error: "Server error", detail: String(err) });
-});
-
-app.listen(PORT, () => console.log(`✅ Makamesco Downloader running on http://localhost:${PORT}`));
+app.listen(PORT, () =>
+  console.log(`✅ Makamesco downloader running @ :${PORT}`)
+);
